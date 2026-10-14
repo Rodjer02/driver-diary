@@ -1,0 +1,42 @@
+name: driver-diary
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: diary
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diary}
+      POSTGRES_DB: diary
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diary -d diary"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://diary:${POSTGRES_PASSWORD:-diary}@db:5432/diary?sslmode=disable
+      DRIVER_TZ: ${DRIVER_TZ:-+05:00}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "${PORT:-3300}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

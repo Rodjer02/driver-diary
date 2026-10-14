@@ -1,0 +1,54 @@
+# Продакшен на общем сервере: образы собираются локально и загружаются через `docker load`,
+# наружу порты не открываются — трафик приходит через уже работающий Caddy (сеть proxy).
+name: driver-diary
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: diary
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: diary
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diary -d diary"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    restart: unless-stopped
+
+  backend:
+    image: driver-diary-backend:latest
+    environment:
+      DATABASE_URL: postgres://diary:${POSTGRES_PASSWORD}@db:5432/diary?sslmode=disable
+      DRIVER_TZ: ${DRIVER_TZ:-+05:00}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/data:ro
+    mem_limit: 128m
+    restart: unless-stopped
+
+  frontend:
+    image: driver-diary-frontend:latest
+    environment:
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      - backend
+    networks:
+      default: {}
+      proxy:
+        aliases: [driver-diary-web]
+    mem_limit: 256m
+    restart: unless-stopped
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-deploy_default}
+
+volumes:
+  pgdata:
